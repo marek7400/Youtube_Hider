@@ -1,5 +1,7 @@
 # youtube hider - Chrome extension
 
+## Turn extension, select filters, wait for the page to scroll and filter the results.
+
 Filtering in Youtube page by time.
 <br>
 <br>
