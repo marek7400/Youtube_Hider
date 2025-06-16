@@ -1,8 +1,7 @@
 # youtube hider
 
 Filtering in Youtube recommended page by time.
-<br>
-<br>
+
 <br>
 EN
 ![youtubehiderEN0.png](images/youtubehiderEN0.png)
@@ -23,5 +22,6 @@ EN
 <br>
 ***
 PL
+
 ![youtubehiderPL.png](images/youtubehiderPL.png)
 
