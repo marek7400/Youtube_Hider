@@ -19,6 +19,13 @@ EN
 <br>
 <br>
 <br>
+## You can customize the extension to your language by changing the words in the file: background.js
+```
+function setDefaultSettings() {
+  const defaultKeywords = [
+    "minute", "minutes", "hour", "hours", "day", "days", "week", "weeks", "month", "months", "year", "years", "Sponsored"
+  ];
+```  
 ***
 
 PL
