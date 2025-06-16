@@ -3,9 +3,6 @@
 Filtering in Youtube page by time.
 
 ## Turn extension, select filters, wait for the page to scroll and filter the results.
-
-<br>
-<br>
 <br>
 v2 with sorting (new--->old)
 <br>
