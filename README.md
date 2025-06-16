@@ -1,6 +1,6 @@
 # youtube hider
 
-Filtering in Youtube recommended page by time.
+Filtering in Youtube page by time.
 <br>
 EN
 ![youtubehiderEN0.png](images/youtubehiderEN0.png)
