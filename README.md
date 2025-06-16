@@ -3,8 +3,15 @@
 Filtering in Youtube page by time.
 <br>
 v2 with sorting (new--->old)
-![v2.png](images/v2.png)
+<br>
+<br>
+<br>
 EN
+<br>
+![v2.png](images/v2.png)
+<br>
+<br>
+<br>
 ![youtubehiderEN0.png](images/youtubehiderEN0.png)
 <br>
 <br>
