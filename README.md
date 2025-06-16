@@ -2,7 +2,7 @@
 
 Filtering in Youtube page by time.
 
-## Turn extension, select filters, wait for the page to scroll and filter the results.
+## Turn extension, select filters, wait for the page to scroll and filter/sorting the results.
 <br>
 v2 with sorting (new--->old)
 <br>
