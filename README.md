@@ -14,18 +14,26 @@ EN
 <br>
 <br>
 <br>
+v1
+
 ![youtubehiderEN0.png](images/youtubehiderEN0.png)
 <br>
 <br>
 <br>
+v1
+
 ![youtubehiderEN1.png](images/youtubehiderEN1.png)
 <br>
 <br>
 <br>
+v1
+
 ![youtubehiderEN2.png](images/youtubehiderEN2.png)
 <br>
 <br>
 <br>
+v1
+
 ![youtubehiderEN3.png](images/youtubehiderEN3.png)
 <br>
 <br>
@@ -41,5 +49,6 @@ function setDefaultSettings() {
 
 PL
 
+v1
 ![youtubehiderPL.png](images/youtubehiderPL.png)
 
