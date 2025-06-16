@@ -19,7 +19,7 @@ EN
 <br>
 <br>
 <br>
-## You can customize the extension to your language by changing the words in the file: background.js
+## You can customize the extension to your language by changing the words in the file: background.js and popup.js
 ```
 function setDefaultSettings() {
   const defaultKeywords = [
