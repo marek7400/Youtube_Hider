@@ -1,4 +1,4 @@
-# youtube hider
+# youtube hider - Chrome extension
 
 Filtering in Youtube page by time.
 <br>
