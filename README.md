@@ -10,5 +10,5 @@ Filtering in Youtube recommended page by time.
 
 ![youtubehiderEN3.png](images/youtubehiderEN3.png)
 
-![youtubehiderPL](images/youtubehiderPL)
+![youtubehiderPL.png](images/youtubehiderPL.png)
 
