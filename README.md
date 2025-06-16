@@ -50,5 +50,6 @@ function setDefaultSettings() {
 PL
 
 v1
+
 ![youtubehiderPL.png](images/youtubehiderPL.png)
 
