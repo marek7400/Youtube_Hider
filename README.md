@@ -1,6 +1,6 @@
 # youtube hider - Chrome extension
 
-Filtering in Youtube page by time.
+Filtering in Youtube page by time. (sorting option new-old IN PROGRESS)
 <br>
 EN
 ![youtubehiderEN0.png](images/youtubehiderEN0.png)
