@@ -1,3 +1,5 @@
+08.08.2025 youtube someting change-now stop working
+
 # youtube hider - Chrome extension
 
 Filtering in Youtube page by time.
