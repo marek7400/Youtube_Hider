@@ -56,3 +56,5 @@ v1
 ![youtubehiderPL.png](images/youtubehiderPL.png)
 ***
 v1.1 fix new Youtube selector (09.08.2025)
+***
+v1.2 Filtering disabled on user channel pages (because they are already sorted by date) (16.08.2025)
