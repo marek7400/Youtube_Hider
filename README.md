@@ -1,5 +1,7 @@
 # youtube hider - Chrome extension
 
+29.08.2025 Youtube change selectors AGAIN-extension stop working.
+
 Filtering in Youtube page by time.
 
 ## Turn extension, select filters, wait for the page to scroll and filter/sorting the results.
