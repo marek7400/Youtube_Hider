@@ -1,5 +1,7 @@
 # youtube hider - Chrome extension
 
+03.04.2026 Youtube change page AGAIN-extension stop working...
+
 29.08.2025 Youtube change selectors AGAIN-extension stop working.-fixed in version 1.3
 
 Filtering in Youtube page by time.
