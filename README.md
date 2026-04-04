@@ -1,5 +1,7 @@
 # youtube hider - Chrome extension
 
+04.04.2026 v1.4 fixed
+
 03.04.2026 Youtube change page AGAIN-extension stop working...
 
 29.08.2025 Youtube change selectors AGAIN-extension stop working.-fixed in version 1.3
@@ -58,7 +60,5 @@ PL
 v1
 
 ![youtubehiderPL.png](images/youtubehiderPL.png)
-***
-v1.1 fix new Youtube selector (09.08.2025)
-***
-v1.2 Filtering disabled on user channel pages (because they are already sorted by date) (16.08.2025)
+
+
