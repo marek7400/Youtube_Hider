@@ -1,5 +1,7 @@
 # youtube hider - Chrome extension
 
+10.04.2026 add Firefox Tampermonkey 1.5 version
+
 08.04.2026 v1.5 fixed
 
 04.04.2026 v1.4 fixed
