@@ -2,6 +2,8 @@
 
 10.04.2026 add Firefox Tampermonkey 1.5 version
 
+![v2.png](images/Youtube_Hider_Firefox_tampermonkey.png)
+
 08.04.2026 v1.5 fixed
 
 04.04.2026 v1.4 fixed
