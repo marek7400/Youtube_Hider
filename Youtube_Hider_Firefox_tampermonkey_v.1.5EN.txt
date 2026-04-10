@@ -1,0 +1,313 @@
+// ==UserScript==
+// @name         YouTube Hider
+// @namespace    http://tampermonkey.net/
+// @version      1.8
+// @description  Hides YouTube videos based on keywords and publish time.
+// @author       marek7400
+// @match        *://*.youtube.com/*
+// @exclude      *://*.youtube.com/user/*
+// @exclude      *://*.youtube.com/@*
+// @exclude      *://*.youtube.com/channel/*
+// @exclude      *://*.youtube.com/c/*
+// @grant        GM_setValue
+// @grant        GM_getValue
+// @grant        GM_addStyle
+// @run-at       document-end
+// ==/UserScript==
+
+(function() {
+    'use strict';
+
+    const keywords = [
+        "minute", "minutes", "mins", "hour", "hours",
+        "day", "days", "week", "weeks",
+        "month", "months", "year", "years", "Sponsored"
+    ];
+
+    function loadSettings() {
+        let defaultKeywordSettings = {};
+        keywords.forEach(kw => { defaultKeywordSettings[kw] = true; });
+        return {
+            enabled: GM_getValue('pluginEnabled', true),
+            keywords: GM_getValue('keywordSettings', defaultKeywordSettings)
+        };
+    }
+
+    function saveSettings(settings) {
+        GM_setValue('pluginEnabled', settings.enabled);
+        GM_setValue('keywordSettings', settings.keywords);
+        processYouTubeHider();
+        updateUI(settings, 0);
+    }
+
+    let currentSettings = loadSettings();
+
+    // --- HIDING LOGIC ---
+    function calculateRank(item) {
+        const text = item.textContent.toLowerCase();
+
+        if (item.querySelector('#ad-badge, .ytd-ad-slot-renderer') || text.includes('sponsored')) {
+            return -1;
+        }
+
+        const metadataSelectors = [
+            '#metadata-line span.inline-metadata-item',
+            '#metadata-line span',
+            '.yt-core-attributed-string',
+            '.yt-lockup-metadata-view-model__metadata span',
+            '.yt-content-metadata-view-model__metadata-row span'
+        ];
+
+        let timeText = "";
+
+        for (const selector of metadataSelectors) {
+            const elements = item.querySelectorAll(selector);
+            for (const el of elements) {
+                const txt = el.textContent.toLowerCase();
+                if (txt.includes('ago')) {
+                    timeText = txt;
+                    break;
+                }
+            }
+            if (timeText) break;
+        }
+
+        if (!timeText) {
+            const visibleText = item.innerText || "";
+            const lines = visibleText.toLowerCase().split('\n');
+            for (const line of lines) {
+                if (line.includes('ago')) {
+                    timeText = line;
+                    break;
+                }
+            }
+        }
+
+        if (!timeText) return -1;
+
+        const timeUnits = {
+            'minute': 1, 'minutes': 1, 'mins': 1,
+            'hour': 60, 'hours': 60,
+            'day': 1440, 'days': 1440,
+            'week': 10080, 'weeks': 10080,
+            'month': 43200, 'months': 43200,
+            'year': 525600, 'years': 525600
+        };
+
+        for (const unit in timeUnits) {
+            if (timeText.includes(unit)) {
+                const match = timeText.match(/\d+/);
+                const value = match ? parseInt(match[0], 10) : 1;
+                return value * timeUnits[unit];
+            }
+        }
+        return -1;
+    }
+
+    function processYouTubeHider() {
+        const gridContainer = document.querySelector('ytd-rich-grid-renderer #contents');
+        if (!gridContainer) return;
+
+        gridContainer.style.display = 'flex';
+        gridContainer.style.flexWrap = 'wrap';
+
+        const items = gridContainer.querySelectorAll('ytd-rich-item-renderer, ytd-rich-section-renderer');
+        let hiddenCount = 0;
+
+        if (!currentSettings.enabled) {
+            gridContainer.style.display = '';
+            items.forEach(item => {
+                item.style.display = '';
+                item.style.order = '';
+                item.style.width = '';
+            });
+            updateUI(currentSettings, 0);
+            return;
+        }
+
+        const activeKeywords = Object.keys(currentSettings.keywords).filter(k => currentSettings.keywords[k]);
+        const itemsPerRow = getComputedStyle(gridContainer).getPropertyValue('--ytd-rich-grid-items-per-row') || 4;
+
+        items.forEach(item => {
+            const textContent = item.textContent.toLowerCase();
+            const rank = calculateRank(item);
+            let shouldHide = false;
+
+            if (rank === -1) {
+                shouldHide = true;
+            } else if (activeKeywords.some(kw => textContent.includes(kw.toLowerCase()))) {
+                shouldHide = true;
+            }
+
+            if (shouldHide) {
+                item.style.display = 'none';
+                hiddenCount++;
+            } else {
+                item.style.display = 'block';
+                item.style.width = `calc(100% / ${itemsPerRow} - 16px)`;
+                item.style.margin = '0 8px 24px 8px';
+                item.style.order = rank;
+            }
+        });
+
+        updateUI(currentSettings, hiddenCount);
+    }
+
+    // --- UI ---
+    function createUI() {
+        if (document.getElementById('yth-btn')) return;
+
+        GM_addStyle(`
+            #yth-btn {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                height: 36px;
+                padding: 0 12px;
+                margin-right: 8px;
+                border-radius: 18px;
+                background: #272727;
+                color: white;
+                font-size: 14px;
+                cursor: pointer;
+                font-family: Arial, sans-serif;
+            }
+
+            #yth-btn:hover {
+                background: #3a3a3a;
+            }
+
+            #yth-panel {
+                position: fixed;
+                top: 60px;
+                right: 20px;
+                z-index: 2147483647;
+                background: #D3D3D3;
+                padding: 15px;
+                border-radius: 8px;
+                width: 320px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+                font-family: Arial, sans-serif;
+                display: none;
+                color: black;
+                border: 1px solid #aaa;
+            }
+
+            #yth-checkbox-container {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                background: white;
+                padding: 10px;
+                border: 1px solid #ccc;
+                border-radius: 5px;
+                max-height: 400px;
+                overflow-y: auto;
+            }
+        `);
+
+        const btn = document.createElement('div');
+        btn.id = 'yth-btn';
+        btn.textContent = '👁️ ...';
+
+        btn.onclick = () => {
+            const panel = document.getElementById('yth-panel');
+            panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+        };
+
+        function insertButton() {
+            const rightControls = document.querySelector('#end');
+            if (rightControls && !document.getElementById('yth-btn')) {
+                rightControls.prepend(btn);
+            } else {
+                setTimeout(insertButton, 500);
+            }
+        }
+        insertButton();
+
+        const panel = document.createElement('div');
+        panel.id = 'yth-panel';
+
+        const closeBtn = document.createElement('span');
+        closeBtn.textContent = '✕';
+        closeBtn.addEventListener('click', () => { panel.style.display = 'none'; });
+        panel.appendChild(closeBtn);
+
+        const title = document.createElement('h2');
+        title.textContent = 'YouTube Hider';
+        panel.appendChild(title);
+
+        const mainSwitch = document.createElement('input');
+        mainSwitch.type = 'checkbox';
+        mainSwitch.checked = currentSettings.enabled;
+        mainSwitch.onchange = (e) => {
+            currentSettings.enabled = e.target.checked;
+            saveSettings(currentSettings);
+        };
+        panel.appendChild(mainSwitch);
+
+        const container = document.createElement('div');
+        container.id = 'yth-checkbox-container';
+
+        keywords.forEach(kw => {
+            const lbl = document.createElement('label');
+            const chk = document.createElement('input');
+
+            chk.type = 'checkbox';
+            chk.checked = currentSettings.keywords[kw];
+            chk.onchange = (e) => {
+                currentSettings.keywords[kw] = e.target.checked;
+                saveSettings(currentSettings);
+            };
+
+            lbl.appendChild(chk);
+            lbl.appendChild(document.createTextNode(kw));
+            container.appendChild(lbl);
+        });
+
+        panel.appendChild(container);
+        document.body.appendChild(panel);
+
+        updateUI(currentSettings, 0);
+    }
+
+    function updateUI(settings, hiddenCount) {
+        const btn = document.getElementById('yth-btn');
+        if (!btn) return;
+
+        if (settings.enabled) {
+            btn.style.background = '#4CAF50';
+            btn.textContent = `👁️ ${hiddenCount}`;
+        } else {
+            btn.style.background = '#F44336';
+            btn.textContent = `OFF`;
+        }
+    }
+
+    const observer = new MutationObserver(() => {
+        clearTimeout(window.hiderTimer);
+        window.hiderTimer = setTimeout(processYouTubeHider, 400);
+    });
+
+    function initHider() {
+        const container = document.querySelector('ytd-rich-grid-renderer #contents');
+        if (container) {
+            processYouTubeHider();
+            observer.observe(container, { childList: true });
+        }
+    }
+
+    function ensureUI() {
+        if (document.body) {
+            createUI();
+            initHider();
+        } else {
+            setTimeout(ensureUI, 200);
+        }
+    }
+
+    ensureUI();
+
+    window.addEventListener('yt-navigate-finish', ensureUI);
+
+})();
