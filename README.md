@@ -63,6 +63,8 @@ function setDefaultSettings() {
 
 PL
 
+10 kwietnia 2026 r.: Dodano rozszerzenie Tampermonkey 1.5 dla przeglądarki Firefox (wersje angielska i polska) (ustawienia-kliknij zielony przycisk)
+
 v1
 
 ![youtubehiderPL.png](images/youtubehiderPL.png)
