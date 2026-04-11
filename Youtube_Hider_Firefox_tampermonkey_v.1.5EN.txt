@@ -9,6 +9,7 @@
 // @exclude      *://*.youtube.com/@*
 // @exclude      *://*.youtube.com/channel/*
 // @exclude      *://*.youtube.com/c/*
+// @exclude      *://*.youtube.com/watch*
 // @grant        GM_setValue
 // @grant        GM_getValue
 // @grant        GM_addStyle
