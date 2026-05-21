@@ -1,6 +1,6 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
 
-April 10, 2026: Added the Tampermonkey 1.5 extension for Firefox (English and Polish versions) (Settings—click the green button)
+April 10, 2026: Added the Tampermonkey extension for Firefox (English and Polish versions) (Settings—click the green button)
 
 ![v2.png](images/Youtube_Hider_Firefox_tampermonkey.png)
 
