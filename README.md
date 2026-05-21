@@ -2,7 +2,7 @@
 
 April 10, 2026: Added the Tampermonkey extension for Firefox (English and Polish versions) (Settings—click the green button)
 
-![v2.png](images/Youtube_Hider_Firefox_tampermonkey.png)
+<img width="446" height="271" alt="YouTube Hider2 3 Firefox" src="https://github.com/user-attachments/assets/be84bf8a-9446-4331-bf47-46930ab15bd4" />
 
 08.04.2026 v1.5 fixed
 
