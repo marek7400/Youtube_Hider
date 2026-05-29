@@ -1,0 +1,399 @@
+// ==UserScript==
+// @name         YouTube Hider
+// @namespace    http://tampermonkey.net/
+// @version      1.6
+// @description  Poprawione sortowanie, usuwanie Shorts, skróty mies./tyg. i ukrywanie braków czasu.
+// @author       You
+// @match        *://*.youtube.com/*
+// @exclude      *://*.youtube.com/user/*
+// @exclude      *://*.youtube.com/@*
+// @exclude      *://*.youtube.com/channel/*
+// @exclude      *://*.youtube.com/c/*
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // Lista dokładnie odwzorowująca checkboxy z ustawień (Panel GUI)
+    const keywords = [
+        "minuta", "minutę", "minuty", "minut", "minute", "minutes", "mins",
+        "godzina", "godzinę", "godziny", "godzin", "hour", "hours",
+        "dzień", "dni", "day", "days",
+        "tydzień", "tygodnie", "tygodni", "tyg.", "week", "weeks",
+        "miesiąc", "miesiące", "miesięcy", "mies.", "month", "months",
+        "rok", "lata", "lat", "year", "years", "Sponsorowane"
+    ];
+
+    // Szersza lista do celów poprawnego ułożenia/sortowania (rankingu), wspiera też skróty YT
+    const timeUnits = {
+        'sekunda': 0, 'sekundy': 0, 'sekund': 0, 'sekundę': 0, 'sek': 0, 's': 0,
+        'minuta': 1, 'minutę': 1, 'minuty': 1, 'minut': 1, 'minute': 1, 'minutes': 1, 'mins': 1, 'min': 1, 'm': 1,
+        'godzina': 60, 'godzinę': 60, 'godziny': 60, 'godzin': 60, 'hour': 60, 'hours': 60, 'godz': 60, 'h': 60,
+        'dzień': 1440, 'dni': 1440, 'day': 1440, 'days': 1440, 'd': 1440,
+        'tydzień': 10080, 'tygodnie': 10080, 'tygodni': 10080, 'tyg.': 10080, 'week': 10080, 'weeks': 10080, 'w': 10080,
+        'miesiąc': 43200, 'miesiące': 43200, 'miesięcy': 43200, 'mies.': 43200, 'month': 43200, 'months': 43200, 'mo': 43200,
+        'rok': 525600, 'lata': 525600, 'lat': 525600, 'year': 525600, 'years': 525600, 'y': 525600
+    };
+
+    const defaultKeywordSettings = {};
+    keywords.forEach(keyword => {
+        defaultKeywordSettings[keyword] = true;
+    });
+
+    let pluginEnabled = GM_getValue('pluginEnabled', true);
+    let keywordSettings = GM_getValue('keywordSettings', defaultKeywordSettings);
+
+    const hiderStyle = document.createElement('style');
+    hiderStyle.textContent = `
+        .youtube-hider-active ytd-rich-grid-row,
+        .youtube-hider-active ytd-rich-grid-row > #contents {
+            display: contents !important;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(hiderStyle);
+
+    function saveSettings() {
+        GM_setValue('pluginEnabled', pluginEnabled);
+        GM_setValue('keywordSettings', keywordSettings);
+        processYouTubeHider();
+    }
+
+    function calculateRankAndGetTime(item) {
+        if (item.querySelector('#ad-badge, .ytd-ad-slot-renderer') || item.textContent.toLowerCase().includes('sponsorowane') || item.textContent.toLowerCase().includes('sponsored')) {
+            return { rank: -2, fullText: "sponsorowane" };
+        }
+
+        let flatMetadata = "";
+        const metadataNodes = item.querySelectorAll('#metadata-line, .yt-core-attributed-string, .yt-lockup-metadata-view-model__metadata, .yt-content-metadata-view-model__metadata-row, #metadata');
+
+        metadataNodes.forEach(node => {
+            flatMetadata += " " + node.textContent.replace(/\s+/g, ' ');
+        });
+
+        flatMetadata = flatMetadata.toLowerCase();
+
+        if (!flatMetadata.includes('temu') && !flatMetadata.includes('ago')) {
+            const lines = (item.innerText || "").toLowerCase().split(/\r?\n/);
+            for (const line of lines) {
+                if (line.includes('temu') || line.includes('ago')) {
+                    flatMetadata += " " + line.replace(/\s+/g, ' ');
+                }
+            }
+        }
+
+        const sortedUnits = Object.keys(timeUnits).sort((a, b) => b.length - a.length);
+
+        // Znajdź jednostkę np. "5 mies."
+        for (const unit of sortedUnits) {
+            // Zabezpieczenie na wypadek kropki w nazwie (np. "mies.")
+            const safeUnit = unit.replace(/\./g, '\\.');
+            // Zmiana \b na sprawdzanie znaków nieliterowych, aby obsłużyć kropki w jednostkach
+            const regex = new RegExp(`(?:^|\\s|\\b)(\\d+)\\s*${safeUnit}(?=[^\\p{L}]|$)`, 'iu');
+            const match = flatMetadata.match(regex);
+            if (match) {
+                return { rank: parseInt(match[1], 10) * timeUnits[unit], fullText: flatMetadata };
+            }
+        }
+
+        // Znajdź jednostkę bazową np. "godzinę temu"
+        for (const unit of sortedUnits) {
+            const safeUnit = unit.replace(/\./g, '\\.');
+            const regex = new RegExp(`(?:^|[^\\p{L}])${safeUnit}(?=[^\\p{L}]|$).{0,20}(?:temu|ago)`, 'iu');
+            const match = flatMetadata.match(regex);
+            if (match) {
+                return { rank: 1 * timeUnits[unit], fullText: flatMetadata };
+            }
+        }
+
+        // -1 brak określonego czasu publikacji
+        return { rank: -1, fullText: flatMetadata };
+    }
+
+    function updateBadgeUI(hiddenCount) {
+        const countText = document.getElementById('yt-hider-count');
+        const badgeBtn = document.getElementById('yt-hider-badge');
+        const iconSpan = document.getElementById('yt-hider-icon');
+
+        if (!badgeBtn || !countText || !iconSpan) return;
+
+        if (pluginEnabled) {
+            badgeBtn.style.backgroundColor = '#0f0f0f';
+            badgeBtn.style.color = '#fff';
+            iconSpan.style.color = '#ff8c00';
+            countText.textContent = String(hiddenCount);
+        } else {
+            badgeBtn.style.backgroundColor = '#F44336';
+            badgeBtn.style.color = '#fff';
+            iconSpan.style.color = '#fff';
+            countText.textContent = 'OFF';
+        }
+    }
+
+    function processYouTubeHider() {
+        const gridContainer = document.querySelector('ytd-rich-grid-renderer > #contents');
+        if (!gridContainer) return;
+
+        const items = gridContainer.querySelectorAll('ytd-rich-item-renderer, ytd-rich-section-renderer');
+        let hiddenCount = 0;
+
+        if (!pluginEnabled) {
+            document.documentElement.classList.remove('youtube-hider-active');
+            gridContainer.style.removeProperty('display');
+            gridContainer.style.removeProperty('flex-wrap');
+            items.forEach(item => {
+                item.style.removeProperty('display');
+                item.style.removeProperty('order');
+                item.style.removeProperty('width');
+                item.style.removeProperty('margin');
+            });
+            updateBadgeUI(0);
+            return;
+        }
+
+        document.documentElement.classList.add('youtube-hider-active');
+        gridContainer.style.setProperty('display', 'flex', 'important');
+        gridContainer.style.setProperty('flex-wrap', 'wrap', 'important');
+
+        const activeKeywords = Object.keys(keywordSettings).filter(k => keywordSettings[k]);
+
+        items.forEach(item => {
+            // Wykrywanie i usuwanie Shorts (nie dodaje ich do licznika ukrytych)
+            if (item.querySelector('a[href^="/shorts/"]')) {
+                item.style.setProperty('display', 'none', 'important');
+                return;
+            }
+
+            const { rank, fullText } = calculateRankAndGetTime(item);
+            let shouldHide = false;
+
+            if (rank === -1) {
+                // NOWOŚĆ: Skrypt z automatu ukrywa filmy bez odnalezionego wskaźnika czasu (np. Live)
+                shouldHide = true;
+            } else if (rank === -2) {
+                if (activeKeywords.some(kw => kw.toLowerCase() === 'sponsorowane')) {
+                    shouldHide = true;
+                }
+            } else {
+                if (activeKeywords.some(kw => {
+                    if (kw.toLowerCase() === 'sponsorowane') return false;
+                    const safeKw = kw.replace(/\./g, '\\.');
+                    const regex = new RegExp(`(?:^|[^\\p{L}])${safeKw}(?=[^\\p{L}]|$)`, 'iu');
+                    return regex.test(fullText);
+                })) {
+                    shouldHide = true;
+                }
+            }
+
+            if (shouldHide) {
+                item.style.setProperty('display', 'none', 'important');
+                hiddenCount++;
+            } else {
+                item.style.setProperty('display', 'block', 'important');
+
+                const orderVal = rank >= 0 ? rank : 999999;
+                item.style.setProperty('order', orderVal, 'important');
+
+                if (item.tagName.toLowerCase() === 'ytd-rich-item-renderer') {
+                    // Wymuszenie 4 elementów w jednym rzędzie
+                    item.style.setProperty('width', 'calc(25% - 16px)', 'important');
+                    item.style.setProperty('margin', '0 8px 24px 8px', 'important');
+                } else {
+                    item.style.setProperty('width', '100%', 'important');
+                    item.style.setProperty('margin', '0 0 24px 0', 'important');
+                }
+            }
+        });
+
+        updateBadgeUI(hiddenCount);
+    }
+
+    function handleKeywordChange(e) {
+        const kw = e.target.getAttribute('data-keyword');
+        keywordSettings[kw] = e.target.checked;
+        saveSettings();
+    }
+
+    function injectUI() {
+        if (document.getElementById('yt-hider-modal')) return;
+
+        const modalContainer = document.createElement('div');
+        modalContainer.id = 'yt-hider-modal';
+        modalContainer.style.position = 'fixed';
+        modalContainer.style.top = '70px';
+        modalContainer.style.right = '20px';
+        modalContainer.style.backgroundColor = '#D3D3D3';
+        modalContainer.style.padding = '20px';
+        modalContainer.style.zIndex = '10000';
+        modalContainer.style.display = 'none';
+        modalContainer.style.border = '1px solid #999';
+        modalContainer.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+        modalContainer.style.borderRadius = '8px';
+        modalContainer.style.fontFamily = 'Arial, sans-serif';
+        modalContainer.style.color = '#000';
+        modalContainer.style.width = '350px';
+        modalContainer.style.maxHeight = '80vh';
+        modalContainer.style.overflowY = 'auto';
+
+        const closeBtn = document.createElement('span');
+        closeBtn.textContent = '×';
+        closeBtn.style.position = 'absolute';
+        closeBtn.style.top = '10px';
+        closeBtn.style.right = '15px';
+        closeBtn.style.fontSize = '24px';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.addEventListener('click', () => { modalContainer.style.display = 'none'; });
+        modalContainer.appendChild(closeBtn);
+
+        const title = document.createElement('h1');
+        title.textContent = 'YouTube Hider';
+        title.style.fontSize = '18px';
+        title.style.marginBottom = '15px';
+        title.style.marginTop = '0';
+        modalContainer.appendChild(title);
+
+        const pluginCheckboxContainer = document.createElement('div');
+        pluginCheckboxContainer.style.marginBottom = '10px';
+
+        const pluginLabel = document.createElement('label');
+        pluginLabel.style.display = 'inline-flex';
+        pluginLabel.style.alignItems = 'center';
+        pluginLabel.style.cursor = 'pointer';
+
+        const pluginCheckbox = document.createElement('input');
+        pluginCheckbox.type = 'checkbox';
+        pluginCheckbox.checked = pluginEnabled;
+        pluginCheckbox.style.marginRight = '8px';
+        pluginCheckbox.addEventListener('change', (e) => {
+            pluginEnabled = e.target.checked;
+            saveSettings();
+        });
+
+        const pluginStrong = document.createElement('strong');
+        pluginStrong.textContent = 'Włącz YouTube Hider';
+
+        pluginLabel.appendChild(pluginCheckbox);
+        pluginLabel.appendChild(pluginStrong);
+        pluginCheckboxContainer.appendChild(pluginLabel);
+        modalContainer.appendChild(pluginCheckboxContainer);
+
+        const subtitle = document.createElement('h2');
+        subtitle.textContent = 'Ukryj filmy z tymi wskaźnikami czasu:';
+        subtitle.style.fontSize = '16px';
+        subtitle.style.marginTop = '20px';
+        subtitle.style.marginBottom = '10px';
+        modalContainer.appendChild(subtitle);
+
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = '1fr 1fr';
+        grid.style.gap = '10px';
+        grid.style.border = '1px solid #ccc';
+        grid.style.padding = '10px';
+        grid.style.marginTop = '10px';
+        grid.style.backgroundColor = '#fff';
+
+        keywords.forEach(keyword => {
+            const label = document.createElement('label');
+            label.style.display = 'inline-flex';
+            label.style.alignItems = 'center';
+            label.style.cursor = 'pointer';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.setAttribute('data-keyword', keyword);
+            checkbox.checked = keywordSettings[keyword] !== false;
+            checkbox.style.marginRight = '8px';
+            checkbox.addEventListener('change', handleKeywordChange);
+
+            const textNode = document.createTextNode(keyword);
+
+            label.appendChild(checkbox);
+            label.appendChild(textNode);
+            grid.appendChild(label);
+        });
+
+        modalContainer.appendChild(grid);
+        document.body.appendChild(modalContainer);
+    }
+
+    function injectBadge() {
+        const mastheadButtons = document.querySelector('#buttons.ytd-masthead');
+        if (!mastheadButtons) return;
+        if (document.getElementById('yt-hider-badge')) return;
+
+        const badgeBtn = document.createElement('div');
+        badgeBtn.id = 'yt-hider-badge';
+        badgeBtn.style.display = 'flex';
+        badgeBtn.style.alignItems = 'center';
+        badgeBtn.style.backgroundColor = '#0f0f0f';
+        badgeBtn.style.border = '1px solid #333';
+        badgeBtn.style.borderRadius = '20px';
+        badgeBtn.style.padding = '0 12px';
+        badgeBtn.style.height = '32px';
+        badgeBtn.style.marginRight = '8px';
+        badgeBtn.style.cursor = 'pointer';
+        badgeBtn.style.color = '#fff';
+        badgeBtn.style.fontWeight = 'bold';
+        badgeBtn.style.fontSize = '14px';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.id = 'yt-hider-icon';
+        iconSpan.textContent = '👁';
+        iconSpan.style.color = '#ff8c00';
+        iconSpan.style.marginRight = '6px';
+        iconSpan.style.fontSize = '16px';
+
+        const countText = document.createElement('span');
+        countText.id = 'yt-hider-count';
+        countText.textContent = '0';
+
+        badgeBtn.appendChild(iconSpan);
+        badgeBtn.appendChild(countText);
+
+        badgeBtn.addEventListener('click', () => {
+            const modal = document.getElementById('yt-hider-modal');
+            if (modal) modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+        });
+
+        mastheadButtons.prepend(badgeBtn);
+        updateBadgeUI(0);
+    }
+
+    let hiderTimer;
+    const observer = new MutationObserver((mutations) => {
+        if (mutations.some(m => m.addedNodes.length > 0)) {
+            clearTimeout(hiderTimer);
+            hiderTimer = setTimeout(processYouTubeHider, 400);
+        }
+    });
+
+    let currentContainer = null;
+    function init() {
+        injectUI();
+        injectBadge();
+
+        const container = document.querySelector('ytd-rich-grid-renderer > #contents');
+        if (container && currentContainer !== container) {
+            if (currentContainer) observer.disconnect();
+            currentContainer = container;
+            observer.observe(container, { childList: true });
+            processYouTubeHider();
+        }
+
+        if (container) {
+            processYouTubeHider();
+        } else {
+            setTimeout(init, 1000);
+        }
+    }
+
+    init();
+    window.addEventListener('yt-navigate-finish', () => {
+        injectBadge();
+        processYouTubeHider();
+    });
+
+})();
