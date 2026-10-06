@@ -1,4 +1,6 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
+06.10.2026 1.9 version
+<img width="1914" height="1034" alt="YouTube Hider1 9" src="https://github.com/user-attachments/assets/5ea8abd4-f5cb-45e3-a099-98bdb1e0c5e3" />
 
 29.05.2026 1.6 version-fix filtering & sorting
 
