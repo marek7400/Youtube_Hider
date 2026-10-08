@@ -1,0 +1,700 @@
+// ==UserScript==
+// @name         YouTube Hider Firefox
+// @namespace    http://tampermonkey.net/
+// @version      1.13
+// @description  Poprawione sortowanie, usuwanie Shorts. Dodano precyzyjne blokowanie obcych języków oraz wizualne Overlay. Poprawiona kompatybilność z Firefox.
+// @author       You
+// @match        *://*.youtube.com/*
+// @exclude      *://*.youtube.com/user/*
+// @exclude      *://*.youtube.com/@*
+// @exclude      *://*.youtube.com/channel/*
+// @exclude      *://*.youtube.com/c/*
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    // Lista dokładnie odwzorowująca checkboxy z ustawień (Panel GUI)
+    const keywords = [
+        "sekunda", "sekundy", "sekund", "sek", "s",
+        "minuta", "minutę", "minuty", "minut", "minute", "minutes", "mins", "min", "m",
+        "godzina", "godzinę", "godziny", "godzin", "hour", "hours", "godz", "h",
+        "1d", "dzień", "dni", "day", "days", "d",
+        "tydzień", "tygodnie", "tygodni", "tyg.", "week", "weeks", "w",
+        "miesiąc", "miesiące", "miesięcy", "mies.", "month", "months", "mo",
+        "rok", "lata", "lat", "year", "years", "y", "Sponsorowane"
+    ];
+
+    // Szersza lista do celów poprawnego ułożenia/sortowania (rankingu), wspiera też skróty YT
+    const timeUnits = {
+        'sekunda': 0, 'sekundy': 0, 'sekund': 0, 'sekundę': 0, 'sek': 0, 's': 0,
+        'minuta': 1, 'minutę': 1, 'minuty': 1, 'minut': 1, 'minute': 1, 'minutes': 1, 'mins': 1, 'min': 1, 'm': 1,
+        'godzina': 60, 'godzinę': 60, 'godziny': 60, 'godzin': 60, 'hour': 60, 'hours': 60, 'godz': 60, 'h': 60,
+        'dzień': 1440, 'dni': 1440, 'day': 1440, 'days': 1440, 'd': 1440,
+        'tydzień': 10080, 'tygodnie': 10080, 'tygodni': 10080, 'tyg.': 10080, 'week': 10080, 'weeks': 10080, 'w': 10080,
+        'miesiąc': 43200, 'miesiące': 43200, 'miesięcy': 43200, 'mies.': 43200, 'month': 43200, 'months': 43200, 'mo': 43200,
+        'rok': 525600, 'lata': 525600, 'lat': 525600, 'year': 525600, 'years': 525600, 'y': 525600
+    };
+
+    // Zabezpieczony przed błędami kodowania RegExp: wizualne zakresy (np. 가-힣) zastąpiono kodami \uXXXX aby uniknąć SyntaxError w Firefox.
+    const foreignRegex = /[\u0900-\u097F\u3040-\u30FF\u4E00-\u9FA5\uAC00-\uD7A3\u0E01-\u0E59\u0980-\u09FF\u0600-\u06FF\u0D02-\u0D39\u1200-\u135A\u0D80-\u0DFF\u0590-\u05FF\u0C00-\u0C7F\u0A80-\u0AFF\u0A00-\u0A7F\u0B80-\u0BFF\u0370-\u03FF\u0C80-\u0CFF\u0B00-\u0B7F\u1000-\u109F\u1780-\u17FF\u0E80-\u0EFF\u0530-\u058F\u10A0-\u10FFăîâșțĂÎÂȘȚáéíúÁÉÍÚñÑüÜĐÃÌƯỜỎẤÀẬàâäçéèêëïôöùûüÿÀÂÇÉÈÊËÎÏÔÖÙÛÜŸúíáñ¿¡ÁÚÍÑãÃÄßìòîČčĎďĚěŇňŘřŠšŤťŮůÝýŽžåÅÆæØøÐðÞþŢţĹĺĽľŔŕБбГгДдЖжЗзИиЙйЛлПпФфЦцЧчШшЩщъьЮюЯяЂђđЉљЊњЋћЏџЃѓЌќĂăȘșȚțҐґЄєЇїЁёЎўЫыЭэĖėĮįŲųŪūĀĒĢĪĶĻŅāēģķļņÕạọ]/iu;
+
+    const defaultKeywordSettings = {};
+    keywords.forEach(keyword => {
+        defaultKeywordSettings[keyword] = true;
+    });
+
+    let pluginEnabled = GM_getValue('pluginEnabled', true);
+    let blockNonPlEn = GM_getValue('blockNonPlEn', false);
+    let showOverlays = GM_getValue('showOverlays', false);
+    let keywordSettings = GM_getValue('keywordSettings', defaultKeywordSettings);
+
+    keywords.forEach(keyword => {
+        if (typeof keywordSettings[keyword] === 'undefined') {
+            keywordSettings[keyword] = true;
+        }
+    });
+
+    const hiderStyle = document.createElement('style');
+    hiderStyle.textContent = `
+        .youtube-hider-active ytd-rich-grid-row,
+        .youtube-hider-active ytd-rich-grid-row > #contents {
+            display: contents !important;
+        }
+    `;
+    (document.head || document.documentElement).appendChild(hiderStyle);
+
+    function saveSettings() {
+        GM_setValue('pluginEnabled', pluginEnabled);
+        GM_setValue('blockNonPlEn', blockNonPlEn);
+        GM_setValue('showOverlays', showOverlays);
+        GM_setValue('keywordSettings', keywordSettings);
+        processYouTubeHider();
+    }
+
+    function calculateRankAndGetTime(item) {
+        if (item.querySelector('#ad-badge, .ytd-ad-slot-renderer') || item.textContent.toLowerCase().includes('sponsorowane') || item.textContent.toLowerCase().includes('sponsored')) {
+            return { rank: -2, fullText: "sponsorowane" };
+        }
+
+        let flatMetadata = "";
+        const metadataNodes = item.querySelectorAll('#metadata-line, .yt-core-attributed-string, .yt-lockup-metadata-view-model__metadata, .yt-content-metadata-view-model__metadata-row, #metadata');
+
+        metadataNodes.forEach(node => {
+            flatMetadata += " " + node.textContent.replace(/\s+/g, ' ');
+        });
+
+        flatMetadata = flatMetadata.toLowerCase();
+
+        if (!flatMetadata.includes('temu') && !flatMetadata.includes('ago')) {
+            const lines = (item.innerText || item.textContent || "").toLowerCase().split(/\r?\n/);
+            for (const line of lines) {
+                if (line.includes('temu') || line.includes('ago')) {
+                    flatMetadata += " " + line.replace(/\s+/g, ' ');
+                }
+            }
+        }
+
+        const sortedUnits = Object.keys(timeUnits).sort((a, b) => b.length - a.length);
+
+        for (const unit of sortedUnits) {
+            const safeUnit = unit.replace(/\./g, '\\.');
+            const regex = new RegExp(`(?:^|[^\\p{L}])(\\d+)\\s*${safeUnit}(?![\\p{L}]|\\s*(?:views|wyświetle|ogląda|watching))`, 'iu');
+            const match = flatMetadata.match(regex);
+            if (match) {
+                return { rank: parseInt(match[1], 10) * timeUnits[unit], fullText: flatMetadata };
+            }
+        }
+
+        for (const unit of sortedUnits) {
+            const safeUnit = unit.replace(/\./g, '\\.');
+            const regex = new RegExp(`(?:^|[^\\p{L}])${safeUnit}(?=[^\\p{L}]|$).{0,20}(?:temu|ago)`, 'iu');
+            const match = flatMetadata.match(regex);
+            if (match) {
+                return { rank: 1 * timeUnits[unit], fullText: flatMetadata };
+            }
+        }
+
+        return { rank: -1, fullText: flatMetadata };
+    }
+
+    function removeOverlay(item) {
+        const existing = item.querySelector('.yt-hider-overlay');
+        if (existing) {
+            existing.remove();
+        }
+    }
+
+    function applyOverlay(item, reason) {
+        let overlay = item.querySelector('.yt-hider-overlay');
+        if (overlay) {
+            const reasonEl = overlay.querySelector('.yt-hider-reason');
+            if (reasonEl && reasonEl.textContent !== reason) {
+                reasonEl.textContent = reason;
+            }
+            return;
+        }
+
+        overlay = document.createElement('div');
+        overlay.className = 'yt-hider-overlay';
+        overlay.style.position = 'absolute';
+        overlay.style.top = '0';
+        overlay.style.left = '0';
+        overlay.style.width = '100%';
+        overlay.style.height = '100%';
+        overlay.style.backgroundColor = '#e5e5e5';
+        overlay.style.zIndex = '99';
+        overlay.style.display = 'flex';
+        overlay.style.flexDirection = 'column';
+        overlay.style.alignItems = 'center';
+        overlay.style.justifyContent = 'center';
+        overlay.style.border = '1px solid #ccc';
+        overlay.style.borderRadius = '12px';
+        overlay.style.fontFamily = 'Arial, sans-serif';
+
+        const eyeBtn = document.createElement('div');
+        eyeBtn.style.position = 'absolute';
+        eyeBtn.style.top = '10px';
+        eyeBtn.style.left = '10px';
+        eyeBtn.style.border = '1px solid #999';
+        eyeBtn.style.padding = '4px 8px';
+        eyeBtn.style.cursor = 'pointer';
+        eyeBtn.style.backgroundColor = '#e5e5e5';
+        eyeBtn.style.zIndex = '101';
+        eyeBtn.title = "Zmień widoczność miniatury";
+
+        const eyeIcon = document.createElement('span');
+        eyeIcon.textContent = '👁';
+        eyeBtn.appendChild(eyeIcon);
+
+        const contentWrapper = document.createElement('div');
+        contentWrapper.style.display = 'flex';
+        contentWrapper.style.flexDirection = 'column';
+        contentWrapper.style.alignItems = 'center';
+
+        const blockedIcon = document.createElement('div');
+        blockedIcon.style.backgroundColor = '#d32f2f';
+        blockedIcon.style.width = '56px';
+        blockedIcon.style.height = '56px';
+        blockedIcon.style.borderRadius = '12px';
+        blockedIcon.style.display = 'flex';
+        blockedIcon.style.alignItems = 'center';
+        blockedIcon.style.justifyContent = 'center';
+        blockedIcon.style.marginBottom = '10px';
+
+        const svgIcon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svgIcon.setAttribute('viewBox', '0 0 24 24');
+        svgIcon.setAttribute('width', '40');
+        svgIcon.setAttribute('height', '40');
+        svgIcon.setAttribute('fill', 'white');
+
+        const pathBlock = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathBlock.setAttribute('d', 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zM4 12c0-4.42 3.58-8 8-8 1.85 0 3.55.63 4.9 1.69L5.69 16.9C4.63 15.55 4 13.85 4 12zm8 8c-1.85 0-3.55-.63-4.9-1.69L18.31 7.1C19.37 8.45 20 10.15 20 12c0 4.42-3.58 8-8 8z');
+        svgIcon.appendChild(pathBlock);
+        blockedIcon.appendChild(svgIcon);
+
+        const titleText = document.createElement('h2');
+        titleText.textContent = 'BLOCKED';
+        titleText.style.margin = '0 0 5px 0';
+        titleText.style.color = '#000';
+        titleText.style.fontSize = '24px';
+        titleText.style.fontWeight = 'bold';
+
+        const reasonText = document.createElement('div');
+        reasonText.className = 'yt-hider-reason';
+        reasonText.textContent = reason;
+        reasonText.style.color = '#000';
+        reasonText.style.fontSize = '16px';
+        reasonText.style.marginBottom = '25px';
+        reasonText.style.textAlign = 'center';
+
+        const actionsDiv = document.createElement('div');
+        actionsDiv.style.display = 'flex';
+        actionsDiv.style.gap = '15px';
+
+        const unblockBtn = document.createElement('a');
+        unblockBtn.textContent = 'Unblock';
+        unblockBtn.style.color = '#065fd4';
+        unblockBtn.style.cursor = 'pointer';
+        unblockBtn.style.textDecoration = 'none';
+        unblockBtn.style.fontSize = '15px';
+
+        const optionsBtn = document.createElement('a');
+        optionsBtn.textContent = 'Options';
+        optionsBtn.style.color = '#065fd4';
+        optionsBtn.style.cursor = 'pointer';
+        optionsBtn.style.textDecoration = 'none';
+        optionsBtn.style.fontSize = '15px';
+
+        actionsDiv.appendChild(unblockBtn);
+        actionsDiv.appendChild(optionsBtn);
+
+        contentWrapper.appendChild(blockedIcon);
+        contentWrapper.appendChild(titleText);
+        contentWrapper.appendChild(reasonText);
+        contentWrapper.appendChild(actionsDiv);
+
+        overlay.appendChild(eyeBtn);
+        overlay.appendChild(contentWrapper);
+
+        const targetContainer = item.querySelector('#content') || item;
+        targetContainer.style.setProperty('position', 'relative', 'important');
+        targetContainer.appendChild(overlay);
+
+        eyeBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (overlay.style.backgroundColor === 'transparent') {
+                overlay.style.backgroundColor = '#e5e5e5';
+                overlay.style.pointerEvents = 'auto';
+                contentWrapper.style.display = 'flex';
+                eyeBtn.style.backgroundColor = '#e5e5e5';
+            } else {
+                overlay.style.backgroundColor = 'transparent';
+                overlay.style.pointerEvents = 'none';
+                eyeBtn.style.pointerEvents = 'auto';
+                contentWrapper.style.display = 'none';
+                eyeBtn.style.backgroundColor = 'rgba(229, 229, 229, 0.8)';
+            }
+        });
+
+        unblockBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            item.dataset.ytHiderUnblocked = 'true';
+            removeOverlay(item);
+        });
+
+        optionsBtn.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const modal = document.getElementById('yt-hider-modal');
+            if (modal) {
+                modal.style.display = 'block';
+            }
+        });
+    }
+
+    function updateBadgeUI(hiddenCount) {
+        const countText = document.getElementById('yt-hider-count');
+        const badgeBtn = document.getElementById('yt-hider-badge');
+        const iconSpan = document.getElementById('yt-hider-icon');
+
+        if (!badgeBtn || !countText || !iconSpan) return;
+
+        if (pluginEnabled) {
+            badgeBtn.style.backgroundColor = '#0f0f0f';
+            badgeBtn.style.color = '#fff';
+            iconSpan.style.color = '#ff8c00';
+            countText.textContent = String(hiddenCount);
+        } else {
+            badgeBtn.style.backgroundColor = '#F44336';
+            badgeBtn.style.color = '#fff';
+            iconSpan.style.color = '#fff';
+            countText.textContent = 'OFF';
+        }
+    }
+
+    function processYouTubeHider() {
+        const gridContainer = document.querySelector('ytd-rich-grid-renderer > #contents');
+        if (!gridContainer) return;
+
+        const items = gridContainer.querySelectorAll('ytd-rich-item-renderer, ytd-rich-section-renderer');
+        let hiddenCount = 0;
+
+        if (!pluginEnabled) {
+            document.documentElement.classList.remove('youtube-hider-active');
+            gridContainer.style.removeProperty('display');
+            gridContainer.style.removeProperty('flex-wrap');
+            items.forEach(item => {
+                item.style.removeProperty('display');
+                item.style.removeProperty('order');
+                item.style.removeProperty('width');
+                item.style.removeProperty('margin');
+                removeOverlay(item);
+            });
+            updateBadgeUI(0);
+            return;
+        }
+
+        document.documentElement.classList.add('youtube-hider-active');
+        gridContainer.style.setProperty('display', 'flex', 'important');
+        gridContainer.style.setProperty('flex-wrap', 'wrap', 'important');
+
+        const activeKeywords = Object.keys(keywordSettings).filter(k => keywordSettings[k]);
+
+        items.forEach(item => {
+            if (item.dataset.ytHiderUnblocked === "true") {
+                item.style.setProperty('display', 'block', 'important');
+                removeOverlay(item);
+
+                const { rank } = calculateRankAndGetTime(item);
+                const orderVal = rank >= 0 ? rank : 999999;
+                item.style.setProperty('order', orderVal, 'important');
+
+                if (item.tagName.toLowerCase() === 'ytd-rich-item-renderer') {
+                    item.style.setProperty('width', 'calc(25% - 16px)', 'important');
+                    item.style.setProperty('margin', '0 8px 24px 8px', 'important');
+                } else {
+                    item.style.setProperty('width', '100%', 'important');
+                    item.style.setProperty('margin', '0 0 24px 0', 'important');
+                }
+                return;
+            }
+
+            if (item.querySelector('a[href^="/shorts/"]')) {
+                item.style.setProperty('display', 'none', 'important');
+                return;
+            }
+
+            const { rank, fullText } = calculateRankAndGetTime(item);
+            let hideReason = null;
+
+            if (blockNonPlEn) {
+                let titleText = '';
+                const titleNodes = item.querySelectorAll('#video-title, #video-title-link');
+
+                if (titleNodes.length > 0) {
+                    titleNodes.forEach(node => { titleText += ' ' + node.textContent; });
+                } else {
+                    const h3Node = item.querySelector('h3');
+                    if (h3Node) titleText = h3Node.textContent;
+                }
+
+                if (titleText) {
+                    const match = titleText.match(foreignRegex);
+                    if (match) {
+                        hideReason = `Block reason: Non-PL/EN title (detected: '${match[0]}')`;
+                    }
+                }
+            }
+
+            if (!hideReason) {
+                if (rank === -1) {
+                    hideReason = 'Block reason: No valid metadata';
+                } else if (rank === -2) {
+                    if (activeKeywords.some(kw => kw.toLowerCase() === 'sponsorowane')) {
+                        hideReason = 'Block reason: Sponsored';
+                    }
+                } else {
+                    const matchedKw = activeKeywords.find(kw => {
+                        if (kw.toLowerCase() === 'sponsorowane') return false;
+
+                        const exactMatch = kw.match(/^(\d+)([\p{L}\.]+)$/iu);
+
+                        if (exactMatch) {
+                            const num = exactMatch[1];
+                            const letter = exactMatch[2].replace(/\./g, '\\.');
+                            const regex = new RegExp(`(?:^|[^\\p{L}\\d])${num}\\s*${letter}(?![\\p{L}]|\\s*(?:views|wyświetle|ogląda|watching))`, 'iu');
+                            return regex.test(fullText);
+                        }
+
+                        const safeKw = kw.replace(/\./g, '\\.');
+                        const shortFormats = ['s', 'm', 'h', 'd', 'w', 'mo', 'y', 'sek', 'min', 'godz'];
+
+                        if (shortFormats.includes(kw.toLowerCase())) {
+                            const exactNumbersForThisKw = keywords
+                                .map(k => k.match(/^(\d+)([\p{L}\.]+)$/iu))
+                                .filter(m => m && m[2].toLowerCase() === kw.toLowerCase())
+                                .map(m => m[1]);
+
+                            let excludePattern = '';
+                            if (exactNumbersForThisKw.length > 0) {
+                                excludePattern = `(?!(?:${exactNumbersForThisKw.join('|')})\\s*${safeKw}(?![\\p{L}]))`;
+                            }
+
+                            const regex = new RegExp(`(?:^|[^\\p{L}\\d])${excludePattern}(\\d+)\\s*${safeKw}(?![\\p{L}]|\\s*(?:views|wyświetle|ogląda|watching))`, 'iu');
+                            return regex.test(fullText);
+                        } else {
+                            const regex = new RegExp(`(?:^|[^\\p{L}])${safeKw}(?![\\p{L}])`, 'iu');
+                            return regex.test(fullText);
+                        }
+                    });
+
+                    if (matchedKw) {
+                        hideReason = `Block reason: ${matchedKw}`;
+                    }
+                }
+            }
+
+            if (hideReason) {
+                hiddenCount++;
+                if (showOverlays && hideReason.startsWith('Block reason: Non-PL/EN title')) {
+                    item.style.setProperty('display', 'block', 'important');
+                    const orderVal = rank >= 0 ? rank : 999999;
+                    item.style.setProperty('order', orderVal, 'important');
+                    if (item.tagName.toLowerCase() === 'ytd-rich-item-renderer') {
+                        item.style.setProperty('width', 'calc(25% - 16px)', 'important');
+                        item.style.setProperty('margin', '0 8px 24px 8px', 'important');
+                    } else {
+                        item.style.setProperty('width', '100%', 'important');
+                        item.style.setProperty('margin', '0 0 24px 0', 'important');
+                    }
+                    applyOverlay(item, hideReason);
+                } else {
+                    item.style.setProperty('display', 'none', 'important');
+                    removeOverlay(item);
+                }
+            } else {
+                item.style.setProperty('display', 'block', 'important');
+                removeOverlay(item);
+
+                const orderVal = rank >= 0 ? rank : 999999;
+                item.style.setProperty('order', orderVal, 'important');
+
+                if (item.tagName.toLowerCase() === 'ytd-rich-item-renderer') {
+                    item.style.setProperty('width', 'calc(25% - 16px)', 'important');
+                    item.style.setProperty('margin', '0 8px 24px 8px', 'important');
+                } else {
+                    item.style.setProperty('width', '100%', 'important');
+                    item.style.setProperty('margin', '0 0 24px 0', 'important');
+                }
+            }
+        });
+
+        updateBadgeUI(hiddenCount);
+    }
+
+    function handleKeywordChange(e) {
+        const kw = e.target.getAttribute('data-keyword');
+        keywordSettings[kw] = e.target.checked;
+        saveSettings();
+    }
+
+    function injectUI() {
+        if (document.getElementById('yt-hider-modal')) return;
+        // Bezpieczne wstrzyknięcie wymagające dostępu do elementu document.body
+        if (!document.body) return;
+
+        const modalContainer = document.createElement('div');
+        modalContainer.id = 'yt-hider-modal';
+        modalContainer.style.position = 'fixed';
+        modalContainer.style.top = '70px';
+        modalContainer.style.right = '20px';
+        modalContainer.style.backgroundColor = '#D3D3D3';
+        modalContainer.style.padding = '20px';
+        modalContainer.style.zIndex = '10000';
+        modalContainer.style.display = 'none';
+        modalContainer.style.border = '1px solid #999';
+        modalContainer.style.boxShadow = '0 4px 8px rgba(0,0,0,0.5)';
+        modalContainer.style.borderRadius = '8px';
+        modalContainer.style.fontFamily = 'Arial, sans-serif';
+        modalContainer.style.color = '#000';
+        modalContainer.style.width = '350px';
+        modalContainer.style.maxHeight = '80vh';
+        modalContainer.style.overflowY = 'auto';
+
+        const closeBtn = document.createElement('span');
+        closeBtn.textContent = '×';
+        closeBtn.style.position = 'absolute';
+        closeBtn.style.top = '10px';
+        closeBtn.style.right = '15px';
+        closeBtn.style.fontSize = '24px';
+        closeBtn.style.cursor = 'pointer';
+        closeBtn.addEventListener('click', () => { modalContainer.style.display = 'none'; });
+        modalContainer.appendChild(closeBtn);
+
+        const title = document.createElement('h1');
+        title.textContent = 'YouTube Hider';
+        title.style.fontSize = '18px';
+        title.style.marginBottom = '15px';
+        title.style.marginTop = '0';
+        modalContainer.appendChild(title);
+
+        const topControlsDiv = document.createElement('div');
+        topControlsDiv.style.marginBottom = '20px';
+        topControlsDiv.style.display = 'flex';
+        topControlsDiv.style.flexDirection = 'column';
+        topControlsDiv.style.gap = '10px';
+
+        const pluginLabel = document.createElement('label');
+        pluginLabel.style.display = 'inline-flex';
+        pluginLabel.style.alignItems = 'center';
+        pluginLabel.style.cursor = 'pointer';
+
+        const pluginCheckbox = document.createElement('input');
+        pluginCheckbox.type = 'checkbox';
+        pluginCheckbox.checked = pluginEnabled;
+        pluginCheckbox.style.marginRight = '8px';
+        pluginCheckbox.addEventListener('change', (e) => {
+            pluginEnabled = e.target.checked;
+            saveSettings();
+        });
+
+        const pluginStrong = document.createElement('strong');
+        pluginStrong.textContent = 'Włącz YouTube Hider';
+
+        pluginLabel.appendChild(pluginCheckbox);
+        pluginLabel.appendChild(pluginStrong);
+        topControlsDiv.appendChild(pluginLabel);
+
+        const blockLangLabel = document.createElement('label');
+        blockLangLabel.style.display = 'inline-flex';
+        blockLangLabel.style.alignItems = 'center';
+        blockLangLabel.style.cursor = 'pointer';
+
+        const blockLangCheckbox = document.createElement('input');
+        blockLangCheckbox.type = 'checkbox';
+        blockLangCheckbox.checked = blockNonPlEn;
+        blockLangCheckbox.style.marginRight = '8px';
+        blockLangCheckbox.addEventListener('change', (e) => {
+            blockNonPlEn = e.target.checked;
+            saveSettings();
+        });
+
+        const blockLangText = document.createElement('span');
+        blockLangText.textContent = 'Block non PL, EN titles';
+
+        blockLangLabel.appendChild(blockLangCheckbox);
+        blockLangLabel.appendChild(blockLangText);
+        topControlsDiv.appendChild(blockLangLabel);
+
+        const overlayLabel = document.createElement('label');
+        overlayLabel.style.display = 'inline-flex';
+        overlayLabel.style.alignItems = 'center';
+        overlayLabel.style.cursor = 'pointer';
+
+        const overlayCheckbox = document.createElement('input');
+        overlayCheckbox.type = 'checkbox';
+        overlayCheckbox.checked = showOverlays;
+        overlayCheckbox.style.marginRight = '8px';
+        overlayCheckbox.addEventListener('change', (e) => {
+            showOverlays = e.target.checked;
+            saveSettings();
+        });
+
+        const overlayText = document.createElement('span');
+        overlayText.textContent = 'Show overlays';
+
+        overlayLabel.appendChild(overlayCheckbox);
+        overlayLabel.appendChild(overlayText);
+        topControlsDiv.appendChild(overlayLabel);
+
+        modalContainer.appendChild(topControlsDiv);
+
+        const subtitle = document.createElement('h2');
+        subtitle.textContent = 'Ukryj filmy z tymi wskaźnikami czasu:';
+        subtitle.style.fontSize = '16px';
+        subtitle.style.marginBottom = '10px';
+        modalContainer.appendChild(subtitle);
+
+        const grid = document.createElement('div');
+        grid.style.display = 'grid';
+        grid.style.gridTemplateColumns = '1fr 1fr';
+        grid.style.gap = '10px';
+        grid.style.border = '1px solid #ccc';
+        grid.style.padding = '10px';
+        grid.style.marginTop = '10px';
+        grid.style.backgroundColor = '#fff';
+
+        keywords.forEach(keyword => {
+            const label = document.createElement('label');
+            label.style.display = 'inline-flex';
+            label.style.alignItems = 'center';
+            label.style.cursor = 'pointer';
+
+            const checkbox = document.createElement('input');
+            checkbox.type = 'checkbox';
+            checkbox.setAttribute('data-keyword', keyword);
+            checkbox.checked = keywordSettings[keyword] !== false;
+            checkbox.style.marginRight = '8px';
+            checkbox.addEventListener('change', handleKeywordChange);
+
+            const textNode = document.createTextNode(keyword);
+
+            label.appendChild(checkbox);
+            label.appendChild(textNode);
+            grid.appendChild(label);
+        });
+
+        modalContainer.appendChild(grid);
+        document.body.appendChild(modalContainer);
+    }
+
+    function injectBadge() {
+        const mastheadButtons = document.querySelector('#buttons.ytd-masthead');
+        if (!mastheadButtons) return;
+        if (document.getElementById('yt-hider-badge')) return;
+
+        const badgeBtn = document.createElement('div');
+        badgeBtn.id = 'yt-hider-badge';
+        badgeBtn.style.display = 'flex';
+        badgeBtn.style.alignItems = 'center';
+        badgeBtn.style.backgroundColor = '#0f0f0f';
+        badgeBtn.style.border = '1px solid #333';
+        badgeBtn.style.borderRadius = '20px';
+        badgeBtn.style.padding = '0 12px';
+        badgeBtn.style.height = '32px';
+        badgeBtn.style.marginRight = '8px';
+        badgeBtn.style.cursor = 'pointer';
+        badgeBtn.style.color = '#fff';
+        badgeBtn.style.fontWeight = 'bold';
+        badgeBtn.style.fontSize = '14px';
+
+        const iconSpan = document.createElement('span');
+        iconSpan.id = 'yt-hider-icon';
+        iconSpan.textContent = '👁';
+        iconSpan.style.color = '#ff8c00';
+        iconSpan.style.marginRight = '6px';
+        iconSpan.style.fontSize = '16px';
+
+        const countText = document.createElement('span');
+        countText.id = 'yt-hider-count';
+        countText.textContent = '0';
+
+        badgeBtn.appendChild(iconSpan);
+        badgeBtn.appendChild(countText);
+
+        badgeBtn.addEventListener('click', () => {
+            const modal = document.getElementById('yt-hider-modal');
+            if (modal) modal.style.display = modal.style.display === 'none' ? 'block' : 'none';
+        });
+
+        mastheadButtons.prepend(badgeBtn);
+        updateBadgeUI(0);
+    }
+
+    let hiderTimer;
+    const observer = new MutationObserver((mutations) => {
+        if (mutations.some(m => m.addedNodes.length > 0)) {
+            clearTimeout(hiderTimer);
+            hiderTimer = setTimeout(processYouTubeHider, 400);
+        }
+    });
+
+    let currentContainer = null;
+    function init() {
+        // Opóźnienie wywołania jeżeli w Firefoksie 'document.body' jeszcze nie istnieje
+        if (!document.body) {
+            setTimeout(init, 50);
+            return;
+        }
+
+        injectUI();
+        injectBadge();
+
+        const container = document.querySelector('ytd-rich-grid-renderer > #contents');
+        if (container && currentContainer !== container) {
+            if (currentContainer) observer.disconnect();
+            currentContainer = container;
+            observer.observe(container, { childList: true });
+            processYouTubeHider();
+        }
+
+        if (container) {
+            processYouTubeHider();
+        } else {
+            setTimeout(init, 1000);
+        }
+    }
+
+    init();
+    window.addEventListener('yt-navigate-finish', () => {
+        injectBadge();
+        processYouTubeHider();
+    });
+
+})();
