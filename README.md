@@ -1,6 +1,24 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
+17.10.2026 ADD:
+
+-Import/export settings
+
+-export debug log
+
+-blacklist channels
+
+-whitelist channels
+
+-blacklist words in title
+
+-block channel button
+
+-unblock now add channel to whitelist
+
+<img width="1912" height="1051" alt="YouTube Hider-tampermonkey" src="https://github.com/user-attachments/assets/02397b27-7f04-4e6b-93d8-f516f3af0693" />
+
+
 08.10.2026 ADD Blocking Non PL/ENG titles+overlay switch
-<img width="1920" height="1037" alt="YouTube Hider1 13" src="https://github.com/user-attachments/assets/e32e57a5-c4a9-44e6-aa3e-90519af18782" />
 
 06.10.2026 1.9 version
 <img width="1914" height="1034" alt="YouTube Hider1 9" src="https://github.com/user-attachments/assets/5ea8abd4-f5cb-45e3-a099-98bdb1e0c5e3" />
