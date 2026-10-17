@@ -1,5 +1,5 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
-17.10.2026 ADD:
+17.10.2026 v1.15 ADD:
 
 -Import/export settings
 
