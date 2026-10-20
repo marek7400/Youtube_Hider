@@ -1,4 +1,7 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
+20.10.2026 v1.16 ADD:
+-block by word in channel name
+
 17.10.2026 v1.15 ADD:
 
 -Import/export settings
