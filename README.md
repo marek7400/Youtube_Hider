@@ -1,7 +1,10 @@
 # Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
+
+26.10.2026 v1.19 Fix block channels with more names
+
 25.10.2026 v 1.18 Fix duplicates on New to you
 
-24.10.2026 v1.17 fix block channel with more names
+24.10.2026 v1.17 Fix blocking channels with more names
 
 20.10.2026 v1.16 ADD:
 -block by word in channel name
