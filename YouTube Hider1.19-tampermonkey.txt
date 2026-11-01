@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         YouTube Hider
 // @namespace    http://tampermonkey.net/
-// @version      1.21
-// @description  Kompleksowa poprawka dla ozdobnych znaków, ukrytych odznak weryfikacji i nazw dzielonych w kolaboracjach.
+// @version      1.19
+// @description  Naprawa separacji tagów w DOM (usuwanie osieroconych spójników np. "i Kanał Sportowy").
 // @author       You
 // @match        *://*.youtube.com/*
 // @exclude      *://*.youtube.com/user/*
@@ -151,10 +151,10 @@
         GM_setValue('blockedChannels', blockedChannels);
         processYouTubeHider();
     }
-    
+
     function normalizeText(text) {
         if (!text) return '';
-        return text.normalize('NFKC')
+        return String(text).normalize('NFKC')
                    .replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '')
                    .replace(/\s+/g, ' ')
                    .trim()
@@ -169,9 +169,15 @@
             const allLinks = item.querySelectorAll('a');
             allLinks.forEach(link => {
                 const href = link.getAttribute('href') || '';
-                if (href.startsWith('/@') || href.startsWith('/channel/') || href.startsWith('/c/') || href.startsWith('/user/')) {
-                    if (href.startsWith('/@')) {
-                        const handle = href.split('/')[1].split('?')[0];
+                let path = href;
+
+                if (href.startsWith('http')) {
+                    try { path = new URL(href).pathname; } catch(e) {}
+                }
+
+                if (path.startsWith('/@') || path.startsWith('/channel/') || path.startsWith('/c/') || path.startsWith('/user/')) {
+                    if (path.startsWith('/@')) {
+                        const handle = path.split('/')[1].split('?')[0];
                         names.push(handle);
                     }
                     const visibleText = link.innerText || link.textContent;
@@ -183,7 +189,7 @@
                 }
             });
 
-            const textNodes = item.querySelectorAll('ytd-channel-name yt-formatted-string, .yt-channel-name-view-model .yt-core-attributed-string, ytd-channel-name, #channel-name');
+            const textNodes = item.querySelectorAll('ytd-channel-name yt-formatted-string, .yt-channel-name-view-model .yt-core-attributed-string, ytd-channel-name, #channel-name, .ytd-channel-name, .ytContentMetadataViewModelMetadataText');
             textNodes.forEach(node => {
                 if (node.getAttribute('title')) names.push(node.getAttribute('title'));
                 const visibleText = node.innerText || node.textContent;
@@ -202,28 +208,41 @@
                 const ariaLabel = shape.getAttribute('aria-label');
                 if (ariaLabel) names.push(ariaLabel);
             });
+
+            if (names.length === 0) {
+                const fallbackLinks = item.querySelectorAll('#channel-name a, ytd-channel-name a');
+                fallbackLinks.forEach(l => {
+                    const txt = l.innerText || l.textContent;
+                    if (txt) names.push(txt);
+                });
+            }
         } catch (e) {
             addLog('ERROR', 'Błąd w getChannelNames', e.message);
         }
 
         let cleanedNames = [];
         names.forEach(n => {
-            let trimmed = n
+            if (!n) return;
+            let trimmed = String(n)
                 .replace(/(Zweryfikowano|Verified|Z oficjalnego kanału wykonawcy|Official Artist Channel)/gi, '')
                 .replace(/[\u200B-\u200D\uFEFF\u200E\u200F]/g, '')
                 .trim()
-                .replace(/\s+/g, ' '); 
+                .replace(/\s+/g, ' ');
 
             if (trimmed.length > 0) {
-                cleanedNames.push(trimmed);
+                // Usuwanie liczników (jeszcze 2, and 4 more)
+                let baseName = trimmed.replace(/(?:^|\s+)(?:i\s+jeszcze\s+\d+|and\s+\d+\s+more|i\s+\d+\s+innych|and\s+\d+\s+others?|oraz\s+\d+\s+innych)(?:\s+.*)?$/i, '').trim();
 
-                const pureName = trimmed.replace(/\s*(?:i jeszcze \d+|and \d+ more|i \d+ innych|and \d+ others?)$/i, '').trim();
-                if (pureName !== trimmed && pureName.length > 0) {
-                    cleanedNames.push(pureName);
+                // NOWE: Usuwanie samotnych, osieroconych spójników, powstałych przez rozcięcie DOM na niezależne tagi span (jak "i Kanał Sportowy")
+                baseName = baseName.replace(/^(?:i|and|oraz|&|,)\s+/i, '').trim();
+                baseName = baseName.replace(/\s+(?:i|and|oraz|&|,)$/i, '').trim();
+
+                cleanedNames.push(trimmed);
+                if (baseName !== trimmed && baseName.length > 0) {
+                    cleanedNames.push(baseName);
                 }
 
-                // Bezpieczne rozdzielanie kolaboracji 
-                const parts = trimmed.split(/\s+(?:i|and|&|,)\s+/i);
+                const parts = baseName.split(/\s+(?:i|and|oraz|&|,)\s+/i);
                 if (parts.length > 1) {
                     parts.forEach(p => {
                         const pt = p.trim();
@@ -243,7 +262,12 @@
         const handle = names.find(n => n.startsWith('@'));
         if (handle) return handle;
 
-        const cleanNames = names.filter(n => !n.startsWith('@') && !/\s+(i|and|&|,)\s+/i.test(n));
+        // Oczyszczony filtr - odrzuca słowa które mimo wszystko nadal mają samotne spójniki i liczniki
+        const cleanNames = names.filter(n =>
+            !n.startsWith('@') &&
+            !/(?:^|\s+)(i|and|oraz|&|,)(?:\s+|$)/i.test(n) &&
+            !/jeszcze|more|innych|others/i.test(n)
+        );
         if (cleanNames.length > 0) {
             return cleanNames.reduce((a, b) => a.length <= b.length ? a : b);
         }
@@ -254,21 +278,21 @@
     function isChannelMatched(extractedNames, targetList) {
         if (!Array.isArray(extractedNames) || !Array.isArray(targetList)) return false;
         if (extractedNames.length === 0 || targetList.length === 0) return false;
-        
+
         return extractedNames.some(extracted => {
             const e = normalizeText(extracted);
             if (!e) return false;
-            
+
             return targetList.some(target => {
                 const t = normalizeText(target);
                 if (!t) return false;
-                
+
                 if (e === t || e === `@${t}` || `@${e}` === t) return true;
-                
+
                 const safeT = t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-                const regex = new RegExp(`(^|[\\s,\\-•&|@+])` + safeT + `([\\s,\\-•&|@+]|$)`, 'i');
+                const regex = new RegExp(`(?:^|[^\\p{L}\\p{N}])${safeT}(?:[^\\p{L}\\p{N}]|$)`, 'iu');
                 if (regex.test(e)) return true;
-                
+
                 return false;
             });
         });
@@ -329,7 +353,7 @@
                         addLog('INFO', 'Zablokowano kanał: ' + channel);
                     }
                 } else {
-                    alert('YouTube Hider: Nie udało się odczytać nazwy kanału.');
+                    alert('YouTube Hider: Nie udało się odczytać nazwy kanału. Spróbuj odświeżyć stronę.');
                 }
             });
 
@@ -652,16 +676,21 @@
 
                 const { rank, fullText } = calculateRankAndGetTime(item);
                 let hideReason = null;
-                let titleText = '';
+let titleText = '';
 
-                const titleNodes = item.querySelectorAll('#video-title, #video-title-link');
-                if (titleNodes.length > 0) {
-                    titleNodes.forEach(node => { titleText += ' ' + node.textContent; });
-                } else {
-                    const h3Node = item.querySelector('h3');
-                    if (h3Node) titleText = h3Node.textContent;
-                }
-                if (titleText) titleText = titleText.trim();
+const titleNodes = item.querySelectorAll('#video-title, #video-title-link, .yt-lockup-metadata-view-model__title, #content-text');
+if (titleNodes.length > 0) {
+    titleNodes.forEach(node => {
+        const text = node.textContent || node.getAttribute('title') || node.getAttribute('aria-label') || '';
+        titleText += ' ' + text;
+    });
+} else {
+    const h3Node = item.querySelector('h3');
+    if (h3Node) {
+        titleText = h3Node.textContent || h3Node.getAttribute('title') || '';
+    }
+}
+if (titleText) titleText = titleText.trim()
 
                 const itemChannelNames = getChannelNames(item);
 
