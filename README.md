@@ -1,4 +1,4 @@
-# Youtube Hider - Chrome extension&Firefox (Tampermonkey script)
+# Youtube Hider - Tampermonkey script
 04.11.2026 v1.20 Fix block by lang
 
 26.10.2026 v1.19 Fix block channels with more names
