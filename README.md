@@ -1,4 +1,11 @@
 # Youtube Hider - Tampermonkey script
+
+08.11.2026 Fix block by lang adn add:
+
+-Do not block Scandinavian languages and languages very similar to them (e.g., Faroese, Icelandic, Old Norse)
+
+-Chrome AI support (when available in the browser) (instead of a fixed list of words)
+
 04.11.2026 v1.20 Fix block by lang
 
 26.10.2026 v1.19 Fix block channels with more names
