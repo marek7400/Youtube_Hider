@@ -1,6 +1,6 @@
 # Youtube Hider - Tampermonkey script
 
-08.11.2026 Fix block by lang adn add:
+08.11.2026 Fix block by lang and add:
 
 -Do not block Scandinavian languages and languages very similar to them (e.g., Faroese, Icelandic, Old Norse)
 
