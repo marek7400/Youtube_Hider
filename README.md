@@ -1,5 +1,7 @@
 # Youtube Hider - Tampermonkey script
 
+13.11.2026 Kolejne poprawki blokady językowej. Niestety ta wersja nie ładuje automatycznie filmów i trzeba ręcznie samemu kilka razy wpierw stronę przewinąć w dół, żeby się wszystkie filmy doładowały do końca. 
+
 08.11.2026 Fix block by lang and add:
 
 -Do not block Scandinavian languages and languages very similar to them (e.g., Faroese, Icelandic, Old Norse)
