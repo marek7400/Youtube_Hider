@@ -1,6 +1,6 @@
 # Youtube Hider - Tampermonkey script
 
-13.11.2026 Kolejne poprawki blokady językowej. Niestety ta wersja nie ładuje automatycznie filmów i trzeba ręcznie samemu kilka razy wpierw stronę przewinąć w dół, żeby się wszystkie filmy doładowały do końca. 
+13.11.2026 Kolejne poprawki blokady językowej. Niestety ta wersja nie ładuje całkowicie automatycznie filmów i trzeba ręcznie samemu kilka razy wpierw stronę przewinąć w dół, żeby się wszystkie filmy doładowały do końca. Full automat jest niebezpieczny, bo YouTube przy załadowaniu zbyt dużej ilości filmów, w zbyt krótkim czasie, traktuje to jako atak DDOS i daje tymczasowego bana.
 
 08.11.2026 Fix block by lang and add:
 
